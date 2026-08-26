@@ -54,6 +54,7 @@ class StateMachine {
   final Map<String, GuardFn> _guards;
   final Map<String, dynamic> _context;
   final Set<String> _configuration = {}; // active leaf paths
+  final Map<String, String> _history = {}; // parent path -> last active child key
 
   StateMachine._(this.root, this._actions, this._guards, this._context) {
     _enterNode(root, const {});
@@ -119,7 +120,10 @@ class StateMachine {
         continue;
       }
 
-      final target = _resolveTarget(source, chosen.target!);
+      var target = _resolveTarget(source, chosen.target!);
+      if (target.isHistory) {
+        target = _resolveHistoryTarget(target);
+      }
       final lca = _lca(source, target);
       final exitDomain = _childTowards(leaf, lca);
 
@@ -194,6 +198,10 @@ class StateMachine {
   }
 
   /// Exit every active descendant of `node` (bottom-up), then `node` itself.
+  ///
+  /// While unwinding, for each compound ancestor passed through (other than
+  /// `node` itself) record which child was active, keyed by the ancestor's
+  /// path — this is the shallow history a later `isHistory` target restores.
   void _exitNode(StateNode node, Map<String, dynamic> eventData) {
     final activeLeaves = _configuration
         .where((p) => p == node.path || p.startsWith('${node.path}.'))
@@ -203,10 +211,26 @@ class StateMachine {
       while (true) {
         _runActions(n.exitActions, eventData);
         if (identical(n, node)) break;
-        n = n.parent!;
+        final parent = n.parent!;
+        if (!parent.isParallel) {
+          _history[parent.path] = n.key;
+        }
+        n = parent;
       }
       _configuration.remove(leafPath);
     }
+  }
+
+  /// Resolve a history pseudo-state to the real node it should enter:
+  /// the parent's last recorded active child, or the parent's `initial`
+  /// child if the parent has never been exited before.
+  StateNode _resolveHistoryTarget(StateNode historyNode) {
+    final parent = historyNode.parent!;
+    final childKey = _history[parent.path] ?? parent.initial;
+    if (childKey == null) {
+      throw StateError('Compound state ${parent.path} has no initial');
+    }
+    return parent.children[childKey]!;
   }
 
   /// Enter each node in `chain` (root-to-target order) in turn: run its
