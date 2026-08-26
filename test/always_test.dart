@@ -47,6 +47,19 @@ void main() {
     expect(() => StateMachine.fromJson(loop), throwsStateError);
   });
 
+  test('compound state with no initial and no targeted always throws', () {
+    // "parent" has children (so it isn't atomic) but declares neither
+    // `initial` nor any targeted `always` to pick one on entry — this must
+    // still be a hard configuration error, not silently relaxed by the
+    // compound-without-initial-via-always allowance.
+    const noInitialNoAlways = '''
+    {"id":"n","initial":"parent","states":{
+      "parent":{"states":{"child":{}}}
+    }}
+    ''';
+    expect(() => StateMachine.fromJson(noInitialNoAlways), throwsStateError);
+  });
+
   group('target-less always (do-activity)', () {
     const watcher = '''
     {
