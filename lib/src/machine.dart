@@ -47,7 +47,10 @@ typedef GuardFn = bool Function(Map<String, dynamic> context,
 /// bottom-up, then runs the transition's own actions, then enters back down
 /// from the LCA to the target (running entry actions top-down along the
 /// explicit path to the target, then descending through `initial` below the
-/// target if the target itself is compound).
+/// target if the target itself is compound) — *unless* the LCA is a
+/// `parallel` state, in which case the source and target are in different
+/// regions and a narrower rule applies; see [_transitionDomains] for the
+/// exact (deliberately non-SCXML) semantics.
 class StateMachine {
   final StateNode root;
   final Map<String, ActionFn> _actions;
@@ -125,11 +128,11 @@ class StateMachine {
         target = _resolveHistoryTarget(target);
       }
       final lca = _lca(source, target);
-      final exitDomain = _childTowards(leaf, lca);
+      final domains = _transitionDomains(leaf, target, lca);
 
-      _exitNode(exitDomain, eventData);
+      _exitNode(domains.exitDomain, eventData);
       _runActions(chosen.actions, eventData);
-      _enterChain(_chainDownTo(target, lca), eventData);
+      _enterChain(_chainDownTo(target, domains.domain), eventData);
       changed = true;
     }
 
@@ -256,6 +259,39 @@ class StateMachine {
   }
 
   // --- Tree geometry helpers -----------------------------------------------
+
+  /// Compute the exit domain and the entry-chain anchor ("domain") for a
+  /// transition from `leaf` (the active leaf that owns `source`'s matched
+  /// handler) to `target`, given their [_lca].
+  ///
+  /// **Divergence from SCXML**: SCXML defines the transition domain as the
+  /// LCA itself, even when the LCA is a `parallel` state — which means a
+  /// transition whose source and target sit in *different regions* of the
+  /// same parallel ancestor exits/re-enters the *entire* parallel state (all
+  /// regions, including ones untouched by the transition). This interpreter
+  /// does not do that, by design: `send` promises that "one event may
+  /// transition multiple regions" and that "regions resolve independently",
+  /// so a single transition reaching across regions must not disturb a
+  /// region it didn't target.
+  ///
+  /// Concretely: when [lca] is *not* parallel, behavior matches SCXML — the
+  /// domain is the LCA, and the exit domain is the LCA's child on `leaf`'s
+  /// side (the branch actually being replaced).
+  ///
+  /// When [lca] *is* parallel, `leaf` and `target` are in different regions.
+  /// The source region is left completely untouched (no exit actions run
+  /// there, its active leaf is unchanged) — instead, both the domain and the
+  /// exit domain become the LCA's child on `target`'s side (the target's
+  /// region root): only that region's currently-active subtree is exited,
+  /// and entry descends from that same region root down to `target`.
+  ({StateNode domain, StateNode exitDomain}) _transitionDomains(
+      StateNode leaf, StateNode target, StateNode lca) {
+    if (lca.isParallel) {
+      final targetRegion = _childTowards(target, lca);
+      return (domain: targetRegion, exitDomain: targetRegion);
+    }
+    return (domain: lca, exitDomain: _childTowards(leaf, lca));
+  }
 
   /// Least common ancestor of `a` and `b` (always exists; root is an
   /// ancestor of every node).
