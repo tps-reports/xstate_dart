@@ -36,10 +36,15 @@ typedef GuardFn = bool Function(Map<String, dynamic> context,
 /// ## Entry / exit
 ///
 /// Entering a compound state runs its entry action(s) then descends through
-/// `initial` children (recursively) until an atomic leaf is reached; a
-/// compound state with no `initial` throws `StateError`. Entering a
-/// parallel state enters every non-history child. History children are
-/// never auto-entered.
+/// `initial` children (recursively) until an atomic leaf is reached. A
+/// compound state may omit `initial` only if it declares at least one
+/// targeted `always`: that array is resolved once, synchronously, at entry
+/// to pick the child (see `_resolveMissingInitial`) — it is not left for a
+/// later settle pass, since the state remains its own descendant's ancestor
+/// indefinitely and would otherwise be re-evaluated forever. A compound
+/// state with neither `initial` nor a resolving targeted `always` throws
+/// `StateError`. Entering a parallel state enters every non-history child.
+/// History children are never auto-entered.
 ///
 /// A transition exits every active descendant from the current leaf(s) up
 /// to (but not including) the least common ancestor (LCA) of the
@@ -184,12 +189,28 @@ class StateMachine {
     _runAlwaysDoActivities(eventData);
   }
 
+  /// Whether `node`'s `always` array is (solely) a missing-`initial`
+  /// selector: a compound state with children but no `initial`. Per
+  /// `_resolveMissingInitial`, that array is resolved exactly once,
+  /// synchronously, at entry — it must never be reconsidered by the
+  /// standing settle scans below. Unlike an atomic state's `always` (which
+  /// naturally drops out of the active configuration once its transition is
+  /// taken), a compound state remains its resolved child's ancestor for as
+  /// long as it stays active, so its `always` would otherwise stay
+  /// perpetually "eligible" — and a guarded-with-unconditional-fallback
+  /// array (the very shape this pattern needs, to guarantee resolution)
+  /// would ping-pong forever once its own entry actions flip the guard's
+  /// inputs.
+  bool _isInitialSelector(StateNode node) =>
+      node.children.isNotEmpty && node.initial == null;
+
   /// Scan the active configuration (each active leaf, then its ancestors,
   /// deduplicated within one scan since guard evaluation is order-stable) for
   /// the first enabled `always` entry that has a target. Returns the state
   /// whose `always` list matched, the active leaf that led to it (needed to
   /// compute the transition's exit domain the same way `send` does), and the
-  /// matched [TransitionDef].
+  /// matched [TransitionDef]. Skips any node whose `always` is a
+  /// missing-`initial` selector (see [_isInitialSelector]).
   ({StateNode source, StateNode leaf, TransitionDef def})?
       _findEnabledTargetedAlways(Map<String, dynamic> eventData) {
     final visited = <StateNode>{};
@@ -197,7 +218,7 @@ class StateMachine {
       final leaf = _nodeAt(leafPath);
       var node = leaf;
       while (true) {
-        if (visited.add(node)) {
+        if (visited.add(node) && !_isInitialSelector(node)) {
           for (final def in node.always) {
             if (def.target == null) continue;
             if (_guardPasses(def, eventData)) {
@@ -234,13 +255,16 @@ class StateMachine {
   /// After the targeted `always` fixed point, run the actions of every
   /// enabled target-less `always` entry on every active state, once each
   /// (do-activity semantics) — deduplicated the same way as
-  /// [_findEnabledTargetedAlways].
+  /// [_findEnabledTargetedAlways]. Skips any node whose `always` is a
+  /// missing-`initial` selector (see [_isInitialSelector]) — such a node's
+  /// `always` array never has target-less entries in practice, but the
+  /// guard is applied for the same reason as in the targeted scan.
   void _runAlwaysDoActivities(Map<String, dynamic> eventData) {
     final visited = <StateNode>{};
     for (final leafPath in List<String>.from(_configuration)) {
       var node = _nodeAt(leafPath);
       while (true) {
-        if (visited.add(node)) {
+        if (visited.add(node) && !_isInitialSelector(node)) {
           for (final def in node.always) {
             if (def.target != null) continue;
             if (_guardPasses(def, eventData)) {
@@ -520,13 +544,55 @@ class StateMachine {
       }
     } else if (node.children.isNotEmpty) {
       final init = node.initial;
-      if (init == null) {
-        throw StateError('Compound state ${node.path} has no initial');
+      if (init != null) {
+        _enterNode(node.children[init]!, eventData);
+      } else {
+        _resolveMissingInitial(node, eventData);
       }
-      _enterNode(node.children[init]!, eventData);
     } else {
       _configuration.add(node.path);
     }
+  }
+
+  /// Resolve a compound state entered with no `initial`: it must declare at
+  /// least one targeted `always` that picks a child on its own behalf — the
+  /// only legal way to omit `initial`. That `always` array is resolved
+  /// exactly once, synchronously, right here at entry — it is deliberately
+  /// *not* left for a later settle pass to find via the normal
+  /// [_findEnabledTargetedAlways] scan. `node` remains an active ancestor of
+  /// whichever leaf ends up entered for as long as `node` stays active, so
+  /// if this `always` were instead registered as an ordinary ongoing
+  /// eligible transition (e.g. by holding `node.path` as a placeholder in
+  /// `_configuration` for the settle loop to pick up), it would be
+  /// re-evaluated on every subsequent microstep too. A guarded-with-
+  /// unconditional-fallback array — the very pattern that makes omitting
+  /// `initial` useful — would then ping-pong forever once its own entry
+  /// actions flip the guard's inputs (as `Move`'s does here), which is
+  /// exactly the loop `_maxMicrosteps` exists to catch, not something to
+  /// paper over. Resolving once at entry avoids that class of bug entirely:
+  /// the array is a one-time initial-child selector, not a standing
+  /// eventless transition.
+  ///
+  /// Throws [StateError] if neither `initial` nor a resolving targeted
+  /// `always` exists, and if the chosen target lies outside `node`'s own
+  /// subtree (the only shape this pattern is meant to support).
+  void _resolveMissingInitial(StateNode node, Map<String, dynamic> eventData) {
+    final targeted = node.always.where((def) => def.target != null).toList();
+    final chosen = _firstEnabled(targeted, eventData);
+    if (chosen == null) {
+      throw StateError('Compound state ${node.path} has no initial');
+    }
+    var target = _resolveTarget(node, chosen.target!);
+    if (target.isHistory) {
+      target = _resolveHistoryTarget(target);
+    }
+    if (!identical(_lca(node, target), node)) {
+      throw StateError('Compound state ${node.path} has no initial, and its '
+          'resolving always target "${chosen.target}" escapes its own '
+          'subtree (resolved to "${target.path}")');
+    }
+    _runActions(chosen.actions, eventData);
+    _enterChain(_chainDownTo(target, node), eventData);
   }
 
   /// Exit every active descendant of `node` (bottom-up), then `node` itself.

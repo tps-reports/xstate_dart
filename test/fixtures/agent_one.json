@@ -1,0 +1,173 @@
+{
+  "id": "AgentOne",
+  "type": "parallel",
+  "context": {
+    "lastDir": "RIGHT",
+    "CD": {
+      "colliding": null
+    }
+  },
+  "states": {
+    "CollisionDetection": {
+      "initial": "Idle",
+      "states": {
+        "Idle": {
+          "on": {
+            "TICK": {
+              "target": "Detection",
+              "guard": "isEnvNotNull"
+            }
+          }
+        },
+        "Detection": {
+          "always": {
+            "actions": "updateColliding"
+          }
+        }
+      }
+    },
+    "Steering": {
+      "initial": "Idle",
+      "states": {
+        "Idle": {
+          "on": {
+            "TICK": {
+              "target": "Active",
+              "guard": "isEnvNotNull"
+            }
+          }
+        },
+        "Active": {
+          "initial": "HoldPosition",
+          "states": {
+            "HoldPosition": {
+              "on": {
+                "TICK": {
+                  "target": "Move",
+                  "guard": "isCollidingPresent"
+                }
+              }
+            },
+            "Move": {
+              "exit": "stopShip",
+              "always": [
+                {
+                  "target": ".Left",
+                  "guard": "shouldMoveLeft"
+                },
+                {
+                  "target": ".Right"
+                }
+              ],
+              "states": {
+                "Left": {
+                  "entry": ["moveLeft", "setLastDirLeft"],
+                  "on": {
+                    "TICK": {
+                      "target": "Right",
+                      "guard": "isRightCollisionOrBlocked"
+                    }
+                  }
+                },
+                "Right": {
+                  "entry": ["moveRight", "setLastDirRight"],
+                  "on": {
+                    "TICK": {
+                      "target": "Left",
+                      "guard": "isLeftCollisionOrBlocked"
+                    }
+                  }
+                }
+              },
+              "on": {
+                "TICK": {
+                  "target": "HoldPosition",
+                  "guard": "isCollidingNotPresent"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "GunControl": {
+      "initial": "Idle",
+      "states": {
+        "Idle": {
+          "on": {
+            "TICK": {
+              "target": "Wait",
+              "guard": "isEnvNotNull"
+            }
+          }
+        },
+        "Wait": {
+          "on": {
+            "TICK": {
+              "target": "Fire",
+              "guard": "canFire"
+            }
+          }
+        },
+        "Fire": {
+          "entry": "fireWeapon",
+          "after": {
+            "50": {
+              "target": "Wait"
+            }
+          }
+        }
+      }
+    },
+    "BorderDetection": {
+      "initial": "CheckingInitial",
+      "states": {
+        "CheckingInitial": {
+          "always": [
+            {
+              "target": "LeftCollision",
+              "guard": "hasHitLeftBorder"
+            },
+            {
+              "target": "RightCollision",
+              "guard": "hasHitRightBorder"
+            },
+            {
+              "target": "Center"
+            }
+          ]
+        },
+        "Center": {
+          "on": {
+            "TICK": [
+              {
+                "target": "LeftCollision",
+                "guard": "hasHitLeftBorder"
+              },
+              {
+                "target": "RightCollision",
+                "guard": "hasHitRightBorder"
+              }
+            ]
+          }
+        },
+        "LeftCollision": {
+          "on": {
+            "TICK": {
+              "target": "Center",
+              "guard": "hasLeftBorderCleared"
+            }
+          }
+        },
+        "RightCollision": {
+          "on": {
+            "TICK": {
+              "target": "Center",
+              "guard": "hasRightBorderCleared"
+            }
+          }
+        }
+      }
+    }
+  }
+}
