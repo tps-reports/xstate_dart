@@ -1,0 +1,68 @@
+import 'package:test/test.dart';
+import 'package:xstate_dart/xstate_dart.dart';
+
+const flatChart = '''
+{
+  "id": "toggle",
+  "initial": "off",
+  "context": {"count": 0},
+  "states": {
+    "off": {"on": {"FLIP": {"target": "on", "actions": "increment"}}},
+    "on": {
+      "entry": "log",
+      "exit": "log",
+      "on": {
+        "FLIP": "off",
+        "LOCKED_FLIP": {"target": "off", "guard": "never"}
+      }
+    }
+  }
+}
+''';
+
+void main() {
+  StateMachine build(List<String> logbook) => StateMachine.fromJson(
+        flatChart,
+        actions: {
+          'increment': (ctx, event) =>
+              ctx['count'] = (ctx['count'] as int) + 1,
+          'log': (ctx, event) => logbook.add('log'),
+        },
+        guards: {'never': (ctx, event, isActive) => false},
+      );
+
+  test('starts in initial state', () {
+    final m = build([]);
+    expect(m.matches('off'), isTrue);
+    expect(m.activeStates, {'off'});
+  });
+
+  test('transitions on event and runs transition action', () {
+    final m = build([]);
+    final r = m.send('FLIP');
+    expect(r.changed, isTrue);
+    expect(m.matches('on'), isTrue);
+    expect(m.context['count'], 1);
+  });
+
+  test('entry and exit actions fire', () {
+    final logbook = <String>[];
+    final m = build(logbook);
+    m.send('FLIP'); // enters on -> entry log
+    m.send('FLIP'); // exits on -> exit log
+    expect(logbook, ['log', 'log']);
+  });
+
+  test('failed guard blocks transition', () {
+    final m = build([]);
+    m.send('FLIP');
+    final r = m.send('LOCKED_FLIP');
+    expect(r.changed, isFalse);
+    expect(m.matches('on'), isTrue);
+  });
+
+  test('unknown event is a no-op', () {
+    final m = build([]);
+    expect(m.send('NOPE').changed, isFalse);
+  });
+}
