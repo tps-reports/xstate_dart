@@ -46,4 +46,49 @@ void main() {
     ''';
     expect(() => StateMachine.fromJson(loop), throwsStateError);
   });
+
+  group('target-less always (do-activity)', () {
+    const watcher = '''
+    {
+      "id": "w",
+      "initial": "watching",
+      "context": {"count": 0, "armed": true},
+      "states": {
+        "watching": {
+          "always": {"actions": "tick", "guard": "armed"},
+          "on": {"NOOP": {"actions": "noop"}}
+        }
+      }
+    }
+    ''';
+
+    StateMachine buildWatcher({required bool armed}) => StateMachine.fromJson(
+        watcher,
+        actions: {
+          'tick': (c, e) => c['count'] = (c['count'] as int) + 1,
+          'noop': (c, e) {},
+        },
+        guards: {'armed': (c, e, a) => armed});
+
+    test('fires once on initial-entry settle', () {
+      final m = buildWatcher(armed: true);
+      expect(m.context['count'], 1);
+    });
+
+    test('fires once more per subsequent send()', () {
+      final m = buildWatcher(armed: true);
+      expect(m.context['count'], 1); // initial-entry settle
+      m.send('NOOP'); // no target change; settle still runs after send
+      expect(m.context['count'], 2);
+      m.send('NOOP');
+      expect(m.context['count'], 3);
+    });
+
+    test('guard false: never fires', () {
+      final m = buildWatcher(armed: false);
+      expect(m.context['count'], 0);
+      m.send('NOOP');
+      expect(m.context['count'], 0);
+    });
+  });
 }

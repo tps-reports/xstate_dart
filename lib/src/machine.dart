@@ -162,6 +162,13 @@ class StateMachine {
   ///
   /// Throws [StateError] if 32 targeted microsteps fire without reaching a
   /// fixed point (an eventless transition cycle).
+  ///
+  /// [eventData] is always `const {}` at every current call site: `always`
+  /// transitions are eventless by definition (the SCXML/XState convention),
+  /// so their guards and actions never see the event that happened to
+  /// precede this settle pass. The parameter exists so guards/actions have
+  /// a well-formed (if empty) event map, matching [ActionFn]/[GuardFn]'s
+  /// required event argument.
   void _settle(Map<String, dynamic> eventData) {
     for (var step = 0; step <= _maxMicrosteps; step++) {
       final found = _findEnabledTargetedAlways(eventData);
