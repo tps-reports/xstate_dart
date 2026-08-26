@@ -365,18 +365,43 @@ class StateMachine {
   ///
   /// This is a restore, not a transition: no entry/exit actions run and
   /// [_settle] is not invoked — the snapshot is trusted to already describe
-  /// a settled configuration. Every configuration path must name an existing
-  /// atomic-reachable node in this machine's chart, or a [StateError] names
-  /// the offending path.
+  /// a settled configuration. Snapshots may be hand-edited (this machine
+  /// backs game save files), so every input shape is checked before any
+  /// state is mutated — a rejected snapshot leaves this machine untouched:
+  ///
+  /// - `configuration` must be present and a JSON array; each entry must
+  ///   name an existing node in this machine's chart, and that node must be
+  ///   a leaf (atomic) state — a compound path (e.g. `"m"` when only
+  ///   `"m.a"`/`"m.b"` are real states) is rejected, since the interpreter's
+  ///   invariant is that `_configuration` holds only atomic-state paths.
+  /// - `history` entries must each name an existing parent-state path whose
+  ///   value is the key of one of that parent's *non-history* children —
+  ///   a value naming a nonexistent or `history: true` child is rejected,
+  ///   since it would otherwise surface later as a crash inside
+  ///   `_resolveHistoryTarget` during gameplay rather than at load time.
+  /// - `timersMs` keys must each name an existing state path.
+  ///
+  /// Any violation throws a [StateError] naming the offending path/value. A
+  /// missing or non-list `configuration` throws a [FormatException] instead
+  /// (there is no path to name), so malformed top-level shape and semantic
+  /// violations are both reported as an intentional, typed failure — never
+  /// an unguarded cast/null-check crash.
   void restoreSnapshot(String json) {
     final decoded = jsonDecode(json) as Map<String, dynamic>;
 
-    final configuration = (decoded['configuration'] as List)
-        .map((e) => e as String)
-        .toList();
+    final rawConfiguration = decoded['configuration'];
+    if (rawConfiguration is! List) {
+      throw FormatException(
+          'restoreSnapshot: snapshot is missing a "configuration" list');
+    }
+    final configuration = rawConfiguration.map((e) => e as String).toList();
     for (final path in configuration) {
       if (path.isEmpty || !_pathExists(path)) {
         throw StateError('restoreSnapshot: unknown state path "$path"');
+      }
+      if (!_nodeAt(path).isLeaf) {
+        throw StateError('restoreSnapshot: configuration path "$path" is '
+            'not an atomic (leaf) state');
       }
     }
 
@@ -385,9 +410,17 @@ class StateMachine {
     final history = Map<String, String>.from(
         (decoded['history'] as Map? ?? const {})
             .map((k, v) => MapEntry(k as String, v as String)));
-    for (final path in history.keys) {
-      if (!_pathExists(path)) {
-        throw StateError('restoreSnapshot: unknown state path "$path"');
+    for (final entry in history.entries) {
+      final parentPath = entry.key;
+      if (!_pathExists(parentPath)) {
+        throw StateError(
+            'restoreSnapshot: unknown state path "$parentPath"');
+      }
+      final childKey = entry.value;
+      final child = _nodeAt(parentPath).children[childKey];
+      if (child == null || child.isHistory) {
+        throw StateError('restoreSnapshot: history entry for '
+            '"$parentPath" names unknown or invalid child "$childKey"');
       }
     }
     final timersMs = Map<String, int>.from(
