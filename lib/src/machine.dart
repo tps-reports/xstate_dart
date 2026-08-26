@@ -58,6 +58,7 @@ class StateMachine {
   final Map<String, dynamic> _context;
   final Set<String> _configuration = {}; // active leaf paths
   final Map<String, String> _history = {}; // parent path -> last active child key
+  final Map<String, int> _timersMs = {}; // state path -> accumulated active ms (states with `after` only)
 
   StateMachine._(this.root, this._actions, this._guards, this._context) {
     _enterNode(root, const {});
@@ -178,7 +179,7 @@ class StateMachine {
             'Eventless "always" transition loop detected in state '
             '"${found.source.path}" (exceeded $_maxMicrosteps microsteps)');
       }
-      _takeAlwaysTransition(found.source, found.leaf, found.def, eventData);
+      _takeTransition(found.source, found.leaf, found.def, eventData);
     }
     _runAlwaysDoActivities(eventData);
   }
@@ -212,12 +213,12 @@ class StateMachine {
     return null;
   }
 
-  /// Take a targeted `always` transition exactly like a targeted `on`
-  /// transition (see `send`): resolve the target, exit up to the LCA (or the
-  /// target's region, if the LCA is parallel), run the transition's actions,
-  /// then enter back down to the target.
-  void _takeAlwaysTransition(StateNode source, StateNode leaf,
-      TransitionDef def, Map<String, dynamic> eventData) {
+  /// Take a targeted transition (an `always` or a due `after`) exactly like
+  /// a targeted `on` transition (see `send`): resolve the target, exit up to
+  /// the LCA (or the target's region, if the LCA is parallel), run the
+  /// transition's actions, then enter back down to the target.
+  void _takeTransition(StateNode source, StateNode leaf, TransitionDef def,
+      Map<String, dynamic> eventData) {
     var target = _resolveTarget(source, def.target!);
     if (target.isHistory) {
       target = _resolveHistoryTarget(target);
@@ -252,6 +253,92 @@ class StateMachine {
         node = parent;
       }
     }
+  }
+
+  // --- Timed (`after`) transitions -----------------------------------------
+
+  /// Advance every active state's `after` timer by [elapsed], then attempt
+  /// any transitions whose accumulated time has crossed a threshold.
+  ///
+  /// There is no wall clock anywhere in this interpreter: `after` timers
+  /// only advance when the caller explicitly calls `tick` (e.g. once per
+  /// game frame). `send` never advances them.
+  ///
+  /// For every currently active state (leaves and their ancestors) that
+  /// declares `after`, [elapsed] is added to that state's accumulated active
+  /// time. Then, repeatedly: scan the active configuration for the first
+  /// active state with a due `after` key (lowest threshold first) whose
+  /// transition is enabled (guards respected), and take it with full
+  /// exit/enter semantics — exactly like a targeted `always` transition.
+  /// Taking a transition may change the active configuration (entering a
+  /// state resets its timer, exiting one removes it), so the scan restarts
+  /// after each transition. Once no due `after` transition is enabled
+  /// anywhere, `_settle` runs (so any `always` transitions unblocked by the
+  /// timed transition also settle) and `tick` returns.
+  ///
+  /// Throws [StateError] if 32 timed transitions fire without reaching a
+  /// fixed point (an `after` transition cycle).
+  void tick(Duration elapsed) {
+    const eventData = <String, dynamic>{};
+    final ms = elapsed.inMilliseconds;
+    if (ms > 0) {
+      for (final path in activeStates) {
+        final node = _nodeAt(path);
+        if (node.after.isNotEmpty) {
+          _timersMs[path] = (_timersMs[path] ?? 0) + ms;
+        }
+      }
+    }
+
+    for (var step = 0; step <= _maxMicrosteps; step++) {
+      final found = _findDueAfter(eventData);
+      if (found == null) break;
+      if (step == _maxMicrosteps) {
+        throw StateError(
+            'Timed "after" transition loop detected in state '
+            '"${found.source.path}" (exceeded $_maxMicrosteps microsteps)');
+      }
+      _takeTransition(found.source, found.leaf, found.def, eventData);
+    }
+
+    _settle(eventData);
+  }
+
+  /// Scan the active configuration (each active leaf, then its ancestors,
+  /// deduplicated within one scan) for the first active state whose `after`
+  /// timer has crossed a threshold with an enabled transition. Thresholds on
+  /// a single state are attempted lowest-first; a key whose threshold hasn't
+  /// been reached yet stops the scan for that state (higher keys can't be due
+  /// either, since keys are sorted ascending). Only targeted `after` entries
+  /// are considered — an `after` clause with no target is an unresolvable
+  /// configuration, not a repeating do-activity, so it is skipped.
+  ({StateNode source, StateNode leaf, TransitionDef def})? _findDueAfter(
+      Map<String, dynamic> eventData) {
+    final visited = <StateNode>{};
+    for (final leafPath in List<String>.from(_configuration)) {
+      final leaf = _nodeAt(leafPath);
+      var node = leaf;
+      while (true) {
+        if (visited.add(node) && node.after.isNotEmpty) {
+          final accumulated = _timersMs[node.path] ?? 0;
+          final keys = node.after.keys.toList()..sort();
+          for (final key in keys) {
+            if (accumulated < key) break;
+            final defs = node.after[key]!;
+            for (final def in defs) {
+              if (def.target == null) continue;
+              if (_guardPasses(def, eventData)) {
+                return (source: node, leaf: leaf, def: def);
+              }
+            }
+          }
+        }
+        final parent = node.parent;
+        if (parent == null) break;
+        node = parent;
+      }
+    }
+    return null;
   }
 
   TransitionDef? _firstEnabled(
@@ -298,7 +385,14 @@ class StateMachine {
   /// if missing); atomic: add `node.path` to the active configuration.
   void _enterNode(StateNode node, Map<String, dynamic> eventData) {
     _runActions(node.entryActions, eventData);
+    _resetTimer(node);
     _descendAfterEntry(node, eventData);
+  }
+
+  /// Clear `node`'s accumulated `after` timer on (re-)entry. No-op for
+  /// states that don't declare `after` — [_timersMs] only tracks those.
+  void _resetTimer(StateNode node) {
+    if (node.after.isNotEmpty) _timersMs[node.path] = 0;
   }
 
   void _descendAfterEntry(StateNode node, Map<String, dynamic> eventData) {
@@ -330,6 +424,7 @@ class StateMachine {
       var n = _nodeAt(leafPath);
       while (true) {
         _runActions(n.exitActions, eventData);
+        _timersMs.remove(n.path);
         if (identical(n, node)) break;
         final parent = n.parent!;
         if (!parent.isParallel) {
@@ -361,6 +456,7 @@ class StateMachine {
     for (var i = 0; i < chain.length; i++) {
       final node = chain[i];
       _runActions(node.entryActions, eventData);
+      _resetTimer(node);
       final isLast = i == chain.length - 1;
       if (isLast) {
         _descendAfterEntry(node, eventData);

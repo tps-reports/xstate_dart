@@ -39,8 +39,15 @@ class StateNode {
     (cfg['on'] as Map<String, dynamic>? ?? const {}).forEach(
         (event, raw) => on[event] = TransitionDef.parseList(raw));
     final after = <int, List<TransitionDef>>{};
-    (cfg['after'] as Map<String, dynamic>? ?? const {}).forEach(
-        (ms, raw) => after[int.parse(ms)] = TransitionDef.parseList(raw));
+    (cfg['after'] as Map<String, dynamic>? ?? const {}).forEach((ms, raw) {
+      final parsedMs = int.tryParse(ms);
+      if (parsedMs == null) {
+        throw FormatException(
+            'State "$path" has a non-numeric "after" key: "$ms" '
+            '(after keys must be millisecond durations, e.g. "50")');
+      }
+      after[parsedMs] = TransitionDef.parseList(raw);
+    });
     final node = StateNode._(
       key: key,
       path: path,
