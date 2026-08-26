@@ -24,6 +24,19 @@ const par = '''
 }
 ''';
 
+const triRegion = '''
+{
+  "id": "tri",
+  "type": "parallel",
+  "on": {"PING": {"actions": "bump"}},
+  "states": {
+    "r1": {"initial": "a", "states": {"a": {}}},
+    "r2": {"initial": "a", "states": {"a": {}}},
+    "r3": {"initial": "a", "states": {"a": {}}}
+  }
+}
+''';
+
 const crossRegion = '''
 {
   "id": "cr",
@@ -87,5 +100,24 @@ void main() {
     // Target region's previous leaf was exited; source region's leaf was
     // NOT exited (it's still active, so it couldn't have been).
     expect(exited, ['engine.stopped']);
+  });
+
+  test(
+      'a handler declared on the parallel state itself fires once per '
+      'send(), not once per active region leaf', () {
+    var count = 0;
+    final m = StateMachine.fromJson(triRegion, actions: {
+      'bump': (c, e) => count++,
+    });
+    expect(m.matches('r1.a'), isTrue);
+    expect(m.matches('r2.a'), isTrue);
+    expect(m.matches('r3.a'), isTrue);
+
+    // PING has no handler on any leaf/region, so it bubbles from each of
+    // the 3 active leaves up to the SAME `on` entry on the parallel root —
+    // without dedup, that's the same (source, transition) pair taken 3x.
+    m.send('PING');
+
+    expect(count, 1);
   });
 }

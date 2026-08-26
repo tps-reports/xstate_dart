@@ -7,11 +7,18 @@ class TransitionDef {
 
   const TransitionDef({this.target, this.guard, this.actions = const []});
 
-  static List<String> _names(dynamic raw) => switch (raw) {
+  /// Parse a "names" field: a JSON value that is absent (`null`), a single
+  /// action/entry/exit name (`String`), or a list of names (`List`). Used
+  /// for transition `actions` here and, identically, for state `entry`/
+  /// `exit` in [StateNode] — one shared parser so both fail the same way.
+  /// Throws [FormatException] for any other shape (e.g. a bare number):
+  /// malformed input must fail loudly at parse time, not silently resolve
+  /// to an empty action list that then quietly does nothing at runtime.
+  static List<String> parseNames(dynamic raw) => switch (raw) {
         null => const [],
         String s => [s],
         List l => l.cast<String>(),
-        _ => throw FormatException('Bad action list: $raw'),
+        _ => throw FormatException('Bad name list: $raw'),
       };
 
   /// A transition value may be "target", {target, guard, actions}, or a
@@ -27,7 +34,7 @@ class TransitionDef {
         TransitionDef(
           target: raw['target'] as String?,
           guard: raw['guard'] as String?,
-          actions: _names(raw['actions']),
+          actions: parseNames(raw['actions']),
         )
       ];
     }

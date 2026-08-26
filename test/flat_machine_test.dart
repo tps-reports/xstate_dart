@@ -65,4 +65,32 @@ void main() {
     final m = build([]);
     expect(m.send('NOPE').changed, isFalse);
   });
+
+  test('event payload flows through to both guards and actions, alongside type', () {
+    const payloadChart = '''
+    {
+      "id": "pl",
+      "initial": "idle",
+      "states": {
+        "idle": {"on": {"GO": {"target": "done", "guard": "hasFoo", "actions": "capture"}}},
+        "done": {}
+      }
+    }
+    ''';
+    Map<String, dynamic>? seen;
+    final m = StateMachine.fromJson(payloadChart, actions: {
+      'capture': (ctx, event) => seen = Map.of(event),
+    }, guards: {
+      'hasFoo': (ctx, event, isActive) => event['foo'] == 'bar',
+    });
+
+    final blocked = m.send('GO', {'foo': 'nope'});
+    expect(blocked.changed, isFalse); // guard read the payload and rejected it
+    expect(m.matches('idle'), isTrue);
+
+    final r = m.send('GO', {'foo': 'bar'});
+    expect(r.changed, isTrue);
+    expect(m.matches('done'), isTrue);
+    expect(seen, {'type': 'GO', 'foo': 'bar'}); // action saw type + payload
+  });
 }

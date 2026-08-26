@@ -77,6 +77,16 @@ void main() {
     expect(m.matches('b.b1.b1x'), isTrue);
   });
 
+  test('previousStates is the ancestor closure, same shape as activeStates', () {
+    final m = build();
+    final r = m.send('OUT'); // a.a1 -> a.a2
+    // Before the transition the active leaf was "a.a1" — previousStates
+    // must include its ancestor "a" too, exactly like activeStates does for
+    // the current configuration, not just the raw leaf path.
+    expect(r.previousStates, {'a', 'a.a1'});
+    expect(r.activeStates, {'a', 'a.a2'});
+  });
+
   test('exit actions run bottom-up on leaving a compound state', () {
     final m = build();
     m.send('GO_B');

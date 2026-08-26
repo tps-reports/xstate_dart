@@ -101,6 +101,49 @@ void main() {
     );
   });
 
+  test('restoreSnapshot rejects a history pseudo-state as an active leaf',
+      () {
+    final m1 = StateMachine.fromJson(_chart);
+    final decoded = jsonDecode(m1.toSnapshotJson()) as Map<String, dynamic>;
+    decoded['configuration'] = ['m.hist']; // "hist" is history:true, not real
+    final badSnap = jsonEncode(decoded);
+
+    final m2 = StateMachine.fromJson(_chart);
+    expect(
+      () => m2.restoreSnapshot(badSnap),
+      throwsA(isA<StateError>().having((e) => e.message, 'message',
+          contains('history pseudo-state'))),
+    );
+  });
+
+  test(
+      'restoreSnapshot rejects two children of a non-parallel compound both '
+      'active (non-orthogonal configuration)', () {
+    final m1 = StateMachine.fromJson(_chart);
+    final decoded = jsonDecode(m1.toSnapshotJson()) as Map<String, dynamic>;
+    decoded['configuration'] = ['m.a', 'm.b']; // "m" is not parallel
+    final badSnap = jsonEncode(decoded);
+
+    final m2 = StateMachine.fromJson(_chart);
+    expect(
+      () => m2.restoreSnapshot(badSnap),
+      throwsA(isA<StateError>().having(
+          (e) => e.message, 'message', contains('not orthogonal'))),
+    );
+  });
+
+  test('restoreSnapshot rejects an empty "configuration"', () {
+    final badSnap = jsonEncode(
+        {'configuration': [], 'context': {}, 'history': {}, 'timersMs': {}});
+
+    final m2 = StateMachine.fromJson(_chart);
+    expect(
+      () => m2.restoreSnapshot(badSnap),
+      throwsA(isA<StateError>().having(
+          (e) => e.message, 'message', contains('must not be empty'))),
+    );
+  });
+
   test('restoreSnapshot rejects a "configuration" that is not a list', () {
     final badSnap = jsonEncode({
       'configuration': 'm.a',

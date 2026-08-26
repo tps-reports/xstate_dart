@@ -12,8 +12,20 @@ class StateNode {
   final Map<String, List<TransitionDef>> on;
   final List<TransitionDef> always;
   final Map<int, List<TransitionDef>> after; // ms -> transitions
-  final Map<String, StateNode> children;
   final StateNode? parent;
+
+  /// Mutable only during [StateNode.parse]'s own construction of this node's
+  /// children (see there); never written to afterward.
+  final Map<String, StateNode> _childrenMutable = {};
+
+  /// This node's children, keyed by local name. Unmodifiable: by the time
+  /// [StateNode.parse] returns for this node (and, transitively, every node
+  /// in the tree — parsing is bottom-up, so a node's children are always
+  /// fully parsed and attached before its own `parse` call returns), no
+  /// further writes happen, and this lazily-computed view is cached forever
+  /// on first read — so no caller can accidentally mutate the parsed tree.
+  late final Map<String, StateNode> children =
+      Map.unmodifiable(_childrenMutable);
 
   StateNode._({
     required this.key,
@@ -26,7 +38,6 @@ class StateNode {
     required this.on,
     required this.always,
     required this.after,
-    required this.children,
     required this.parent,
   });
 
@@ -35,6 +46,16 @@ class StateNode {
     final path = parent == null || parent.path.isEmpty
         ? key
         : '${parent.path}.$key';
+    if (parent == null && cfg['after'] != null) {
+      // The root is never a member of its own `activeStates` (that set is
+      // built from active *leaves* and their ancestor prefixes, and the
+      // root's own path is the empty string, never added — see
+      // `StateMachine._expandToAncestorClosure`), so `tick` never visits it
+      // and a root-level `after` timer would never advance or fire. Rather
+      // than silently accepting a chart clause that can never do anything,
+      // reject it at parse time.
+      throw FormatException('after on the root is not supported');
+    }
     final on = <String, List<TransitionDef>>{};
     (cfg['on'] as Map<String, dynamic>? ?? const {}).forEach(
         (event, raw) => on[event] = TransitionDef.parseList(raw));
@@ -54,27 +75,19 @@ class StateNode {
       initial: cfg['initial'] as String?,
       isParallel: cfg['type'] == 'parallel',
       isHistory: cfg['history'] == true,
-      entryActions: _plainNames(cfg['entry']),
-      exitActions: _plainNames(cfg['exit']),
+      entryActions: TransitionDef.parseNames(cfg['entry']),
+      exitActions: TransitionDef.parseNames(cfg['exit']),
       on: on,
       always: TransitionDef.parseList(cfg['always']),
       after: after,
-      children: {},
       parent: parent,
     );
     (cfg['states'] as Map<String, dynamic>? ?? const {}).forEach((k, v) {
-      node.children[k] =
+      node._childrenMutable[k] =
           StateNode.parse(k, v as Map<String, dynamic>, parent: node);
     });
     return node;
   }
-
-  static List<String> _plainNames(dynamic raw) => switch (raw) {
-        null => const [],
-        String s => [s],
-        List l => l.cast<String>(),
-        _ => const [],
-      };
 
   bool get isLeaf => children.isEmpty;
 }
