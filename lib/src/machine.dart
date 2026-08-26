@@ -61,6 +61,7 @@ class StateMachine {
 
   StateMachine._(this.root, this._actions, this._guards, this._context) {
     _enterNode(root, const {});
+    _settle(const {});
   }
 
   factory StateMachine.fromJson(String json,
@@ -96,7 +97,6 @@ class StateMachine {
   StateTransitionResult send(String event, [Map<String, dynamic>? payload]) {
     final eventData = {'type': event, ...?payload};
     final before = Set<String>.from(_configuration);
-    var changed = false;
 
     for (final leafPath in before) {
       // A prior iteration in this same send() may already have exited this
@@ -133,28 +133,138 @@ class StateMachine {
       _exitNode(domains.exitDomain, eventData);
       _runActions(chosen.actions, eventData);
       _enterChain(_chainDownTo(target, domains.domain), eventData);
-      changed = true;
     }
+
+    _settle(const {});
 
     return StateTransitionResult(
       activeStates: activeStates,
-      changed: changed,
+      changed: !_sameConfiguration(_configuration, before),
       previousStates: before,
     );
+  }
+
+  bool _sameConfiguration(Set<String> a, Set<String> b) =>
+      a.length == b.length && a.containsAll(b);
+
+  // --- Eventless (`always`) transitions ------------------------------------
+
+  static const _maxMicrosteps = 32;
+
+  /// Run the microstep loop to a fixed point.
+  ///
+  /// Repeatedly scans the active configuration (each active leaf, then its
+  /// ancestors) for the first enabled *targeted* `always` transition; takes
+  /// it with full exit/enter semantics and restarts the scan. Once no
+  /// targeted `always` transition is enabled anywhere, every active state's
+  /// enabled *target-less* `always` entries run their actions once
+  /// (do-activity semantics) and `_settle` returns.
+  ///
+  /// Throws [StateError] if 32 targeted microsteps fire without reaching a
+  /// fixed point (an eventless transition cycle).
+  void _settle(Map<String, dynamic> eventData) {
+    for (var step = 0; step <= _maxMicrosteps; step++) {
+      final found = _findEnabledTargetedAlways(eventData);
+      if (found == null) break;
+      if (step == _maxMicrosteps) {
+        throw StateError(
+            'Eventless "always" transition loop detected in state '
+            '"${found.source.path}" (exceeded $_maxMicrosteps microsteps)');
+      }
+      _takeAlwaysTransition(found.source, found.leaf, found.def, eventData);
+    }
+    _runAlwaysDoActivities(eventData);
+  }
+
+  /// Scan the active configuration (each active leaf, then its ancestors,
+  /// deduplicated within one scan since guard evaluation is order-stable) for
+  /// the first enabled `always` entry that has a target. Returns the state
+  /// whose `always` list matched, the active leaf that led to it (needed to
+  /// compute the transition's exit domain the same way `send` does), and the
+  /// matched [TransitionDef].
+  ({StateNode source, StateNode leaf, TransitionDef def})?
+      _findEnabledTargetedAlways(Map<String, dynamic> eventData) {
+    final visited = <StateNode>{};
+    for (final leafPath in List<String>.from(_configuration)) {
+      final leaf = _nodeAt(leafPath);
+      var node = leaf;
+      while (true) {
+        if (visited.add(node)) {
+          for (final def in node.always) {
+            if (def.target == null) continue;
+            if (_guardPasses(def, eventData)) {
+              return (source: node, leaf: leaf, def: def);
+            }
+          }
+        }
+        final parent = node.parent;
+        if (parent == null) break;
+        node = parent;
+      }
+    }
+    return null;
+  }
+
+  /// Take a targeted `always` transition exactly like a targeted `on`
+  /// transition (see `send`): resolve the target, exit up to the LCA (or the
+  /// target's region, if the LCA is parallel), run the transition's actions,
+  /// then enter back down to the target.
+  void _takeAlwaysTransition(StateNode source, StateNode leaf,
+      TransitionDef def, Map<String, dynamic> eventData) {
+    var target = _resolveTarget(source, def.target!);
+    if (target.isHistory) {
+      target = _resolveHistoryTarget(target);
+    }
+    final lca = _lca(source, target);
+    final domains = _transitionDomains(leaf, target, lca);
+
+    _exitNode(domains.exitDomain, eventData);
+    _runActions(def.actions, eventData);
+    _enterChain(_chainDownTo(target, domains.domain), eventData);
+  }
+
+  /// After the targeted `always` fixed point, run the actions of every
+  /// enabled target-less `always` entry on every active state, once each
+  /// (do-activity semantics) — deduplicated the same way as
+  /// [_findEnabledTargetedAlways].
+  void _runAlwaysDoActivities(Map<String, dynamic> eventData) {
+    final visited = <StateNode>{};
+    for (final leafPath in List<String>.from(_configuration)) {
+      var node = _nodeAt(leafPath);
+      while (true) {
+        if (visited.add(node)) {
+          for (final def in node.always) {
+            if (def.target != null) continue;
+            if (_guardPasses(def, eventData)) {
+              _runActions(def.actions, eventData);
+            }
+          }
+        }
+        final parent = node.parent;
+        if (parent == null) break;
+        node = parent;
+      }
+    }
   }
 
   TransitionDef? _firstEnabled(
       List<TransitionDef> defs, Map<String, dynamic> eventData) {
     for (final def in defs) {
-      final guardName = def.guard;
-      if (guardName == null) return def;
-      final guard = _guards[guardName];
-      if (guard == null) {
-        throw StateError('Unknown guard: $guardName');
-      }
-      if (guard(_context, eventData, _isActive)) return def;
+      if (_guardPasses(def, eventData)) return def;
     }
     return null;
+  }
+
+  /// Whether `def`'s guard (if any) passes; a def with no guard always
+  /// passes. Throws if the guard name isn't registered.
+  bool _guardPasses(TransitionDef def, Map<String, dynamic> eventData) {
+    final guardName = def.guard;
+    if (guardName == null) return true;
+    final guard = _guards[guardName];
+    if (guard == null) {
+      throw StateError('Unknown guard: $guardName');
+    }
+    return guard(_context, eventData, _isActive);
   }
 
   StateNode _nodeAt(String path) {
