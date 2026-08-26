@@ -341,6 +341,91 @@ class StateMachine {
     return null;
   }
 
+  // --- Snapshotting ---------------------------------------------------------
+
+  /// Serialize the machine's full runtime state — active configuration,
+  /// context, history, and accumulated `after` timers — to a JSON string.
+  ///
+  /// The result is opaque to the caller except for its four top-level keys
+  /// (`configuration`, `context`, `history`, `timersMs`); pass it back to
+  /// [restoreSnapshot] on a freshly-constructed machine built from the same
+  /// chart to resume exactly where this machine left off.
+  String toSnapshotJson() {
+    return jsonEncode({
+      'configuration': _configuration.toList(),
+      'context': _context,
+      'history': _history,
+      'timersMs': _timersMs,
+    });
+  }
+
+  /// Replace this machine's active configuration, context, history, and
+  /// `after` timers with the ones recorded in [json] (produced by an earlier
+  /// call to [toSnapshotJson] against a machine built from the same chart).
+  ///
+  /// This is a restore, not a transition: no entry/exit actions run and
+  /// [_settle] is not invoked — the snapshot is trusted to already describe
+  /// a settled configuration. Every configuration path must name an existing
+  /// atomic-reachable node in this machine's chart, or a [StateError] names
+  /// the offending path.
+  void restoreSnapshot(String json) {
+    final decoded = jsonDecode(json) as Map<String, dynamic>;
+
+    final configuration = (decoded['configuration'] as List)
+        .map((e) => e as String)
+        .toList();
+    for (final path in configuration) {
+      if (path.isEmpty || !_pathExists(path)) {
+        throw StateError('restoreSnapshot: unknown state path "$path"');
+      }
+    }
+
+    final context = Map<String, dynamic>.from(
+        decoded['context'] as Map? ?? const {});
+    final history = Map<String, String>.from(
+        (decoded['history'] as Map? ?? const {})
+            .map((k, v) => MapEntry(k as String, v as String)));
+    for (final path in history.keys) {
+      if (!_pathExists(path)) {
+        throw StateError('restoreSnapshot: unknown state path "$path"');
+      }
+    }
+    final timersMs = Map<String, int>.from(
+        (decoded['timersMs'] as Map? ?? const {})
+            .map((k, v) => MapEntry(k as String, v as int)));
+    for (final path in timersMs.keys) {
+      if (!_pathExists(path)) {
+        throw StateError('restoreSnapshot: unknown state path "$path"');
+      }
+    }
+
+    _configuration
+      ..clear()
+      ..addAll(configuration);
+    _context
+      ..clear()
+      ..addAll(context);
+    _history
+      ..clear()
+      ..addAll(history);
+    _timersMs
+      ..clear()
+      ..addAll(timersMs);
+  }
+
+  /// Whether `path` names an existing node in this machine's chart (root
+  /// included, via the empty path).
+  bool _pathExists(String path) {
+    if (path.isEmpty) return true;
+    var node = root;
+    for (final part in path.split('.')) {
+      final next = node.children[part];
+      if (next == null) return false;
+      node = next;
+    }
+    return true;
+  }
+
   TransitionDef? _firstEnabled(
       List<TransitionDef> defs, Map<String, dynamic> eventData) {
     for (final def in defs) {
