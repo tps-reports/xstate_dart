@@ -68,7 +68,12 @@ class StateMachine {
   final Map<String, dynamic> _context;
   final Set<String> _configuration = {}; // active leaf paths
   final Map<String, String> _history = {}; // parent path -> last active child key
-  final Map<String, int> _timersMs = {}; // state path -> accumulated active ms (states with `after` only)
+  // State path -> accumulated active MICROseconds (states with `after`
+  // only). Microsecond precision keeps sub-millisecond tick() durations
+  // exact (Duration.inMicroseconds never truncates a real Duration);
+  // `after` thresholds stay declared in milliseconds and snapshots keep
+  // serializing whole milliseconds under "timersMs" (see toSnapshotJson).
+  final Map<String, int> _timersUs = {};
 
   StateMachine._(this.root, this._actions, this._guards, this._context) {
     _enterNode(root, const {});
@@ -361,12 +366,12 @@ class StateMachine {
   /// frame's worth of time.
   void tick(Duration elapsed) {
     const eventData = <String, dynamic>{};
-    final ms = elapsed.inMilliseconds;
-    if (ms > 0) {
+    final us = elapsed.inMicroseconds;
+    if (us > 0) {
       for (final path in activeStates) {
         final node = _nodeAt(path);
         if (node.after.isNotEmpty) {
-          _timersMs[path] = (_timersMs[path] ?? 0) + ms;
+          _timersUs[path] = (_timersUs[path] ?? 0) + us;
         }
       }
     }
@@ -401,10 +406,10 @@ class StateMachine {
       var node = leaf;
       while (true) {
         if (visited.add(node) && node.after.isNotEmpty) {
-          final accumulated = _timersMs[node.path] ?? 0;
+          final accumulated = _timersUs[node.path] ?? 0;
           final keys = node.after.keys.toList()..sort();
           for (final key in keys) {
-            if (accumulated < key) break;
+            if (accumulated < key * 1000) break; // keys are milliseconds
             final defs = node.after[key]!;
             for (final def in defs) {
               if (def.target == null) continue;
@@ -431,12 +436,19 @@ class StateMachine {
   /// (`configuration`, `context`, `history`, `timersMs`); pass it back to
   /// [restoreSnapshot] on a freshly-constructed machine built from the same
   /// chart to resume exactly where this machine left off.
+  ///
+  /// `timersMs` serializes whole milliseconds even though timers accumulate
+  /// in microseconds internally: any sub-millisecond remainder is dropped at
+  /// save time (a bounded, at-most-1ms-per-state loss on a save/load
+  /// round-trip), keeping the snapshot format identical to pre-0.1.2
+  /// releases.
   String toSnapshotJson() {
     return jsonEncode({
       'configuration': _configuration.toList(),
       'context': _context,
       'history': _history,
-      'timersMs': _timersMs,
+      'timersMs':
+          _timersUs.map((path, us) => MapEntry(path, us ~/ 1000)),
     });
   }
 
@@ -559,9 +571,9 @@ class StateMachine {
     _history
       ..clear()
       ..addAll(history);
-    _timersMs
+    _timersUs
       ..clear()
-      ..addAll(timersMs);
+      ..addAll(timersMs.map((path, ms) => MapEntry(path, ms * 1000)));
   }
 
   /// Whether `path` names an existing node in this machine's chart (root
@@ -626,9 +638,9 @@ class StateMachine {
   }
 
   /// Clear `node`'s accumulated `after` timer on (re-)entry. No-op for
-  /// states that don't declare `after` — [_timersMs] only tracks those.
+  /// states that don't declare `after` — [_timersUs] only tracks those.
   void _resetTimer(StateNode node) {
-    if (node.after.isNotEmpty) _timersMs[node.path] = 0;
+    if (node.after.isNotEmpty) _timersUs[node.path] = 0;
   }
 
   void _descendAfterEntry(StateNode node, Map<String, dynamic> eventData) {
@@ -702,7 +714,7 @@ class StateMachine {
       var n = _nodeAt(leafPath);
       while (true) {
         _runActions(n.exitActions, eventData);
-        _timersMs.remove(n.path);
+        _timersUs.remove(n.path);
         if (identical(n, node)) break;
         final parent = n.parent!;
         if (!parent.isParallel) {
