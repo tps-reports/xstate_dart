@@ -22,14 +22,13 @@ const flatChart = '''
 
 void main() {
   StateMachine build(List<String> logbook) => StateMachine.fromJson(
-        flatChart,
-        actions: {
-          'increment': (ctx, event) =>
-              ctx['count'] = (ctx['count'] as int) + 1,
-          'log': (ctx, event) => logbook.add('log'),
-        },
-        guards: {'never': (ctx, event, isActive) => false},
-      );
+    flatChart,
+    actions: {
+      'increment': (ctx, event) => ctx['count'] = (ctx['count'] as int) + 1,
+      'log': (ctx, event) => logbook.add('log'),
+    },
+    guards: {'never': (ctx, event, isActive) => false},
+  );
 
   test('starts in initial state', () {
     final m = build([]);
@@ -66,8 +65,10 @@ void main() {
     expect(m.send('NOPE').changed, isFalse);
   });
 
-  test('event payload flows through to both guards and actions, alongside type', () {
-    const payloadChart = '''
+  test(
+    'event payload flows through to both guards and actions, alongside type',
+    () {
+      const payloadChart = '''
     {
       "id": "pl",
       "initial": "idle",
@@ -77,20 +78,24 @@ void main() {
       }
     }
     ''';
-    Map<String, dynamic>? seen;
-    final m = StateMachine.fromJson(payloadChart, actions: {
-      'capture': (ctx, event) => seen = Map.of(event),
-    }, guards: {
-      'hasFoo': (ctx, event, isActive) => event['foo'] == 'bar',
-    });
+      Map<String, dynamic>? seen;
+      final m = StateMachine.fromJson(
+        payloadChart,
+        actions: {'capture': (ctx, event) => seen = Map.of(event)},
+        guards: {'hasFoo': (ctx, event, isActive) => event['foo'] == 'bar'},
+      );
 
-    final blocked = m.send('GO', {'foo': 'nope'});
-    expect(blocked.changed, isFalse); // guard read the payload and rejected it
-    expect(m.matches('idle'), isTrue);
+      final blocked = m.send('GO', {'foo': 'nope'});
+      expect(
+        blocked.changed,
+        isFalse,
+      ); // guard read the payload and rejected it
+      expect(m.matches('idle'), isTrue);
 
-    final r = m.send('GO', {'foo': 'bar'});
-    expect(r.changed, isTrue);
-    expect(m.matches('done'), isTrue);
-    expect(seen, {'type': 'GO', 'foo': 'bar'}); // action saw type + payload
-  });
+      final r = m.send('GO', {'foo': 'bar'});
+      expect(r.changed, isTrue);
+      expect(m.matches('done'), isTrue);
+      expect(seen, {'type': 'GO', 'foo': 'bar'}); // action saw type + payload
+    },
+  );
 }

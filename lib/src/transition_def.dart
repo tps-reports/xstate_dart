@@ -15,11 +15,11 @@ class TransitionDef {
   /// malformed input must fail loudly at parse time, not silently resolve
   /// to an empty action list that then quietly does nothing at runtime.
   static List<String> parseNames(dynamic raw) => switch (raw) {
-        null => const [],
-        String s => [s],
-        List l => l.cast<String>(),
-        _ => throw FormatException('Bad name list: $raw'),
-      };
+    null => const [],
+    String s => [s],
+    List l => l.cast<String>(),
+    _ => throw FormatException('Bad name list: $raw'),
+  };
 
   /// A transition value may be "target", {target, guard, actions}, or a
   /// list of those (guarded alternatives, first match wins).
@@ -35,7 +35,7 @@ class TransitionDef {
           target: raw['target'] as String?,
           guard: raw['guard'] as String?,
           actions: parseNames(raw['actions']),
-        )
+        ),
       ];
     }
     throw FormatException('Bad transition: $raw');

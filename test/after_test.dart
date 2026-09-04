@@ -15,8 +15,7 @@ const gun = '''
 void main() {
   test('after fires when accumulated game time passes threshold', () {
     var shots = 0;
-    final m = StateMachine.fromJson(gun,
-        actions: {'shoot': (c, e) => shots++});
+    final m = StateMachine.fromJson(gun, actions: {'shoot': (c, e) => shots++});
     m.send('FIRE');
     expect(m.matches('firing'), isTrue);
     m.tick(const Duration(milliseconds: 30));
@@ -63,20 +62,22 @@ void main() {
     expect(m.matches('wait'), isTrue);
   });
 
-  test('snapshot keeps whole-ms timers; sub-ms remainder is dropped on save',
-      () {
-    final m = StateMachine.fromJson(gun, actions: {'shoot': (c, e) {}});
-    m.send('FIRE');
-    m.tick(const Duration(microseconds: 30500)); // 30.5ms accumulated
-    final snapshot = m.toSnapshotJson();
-    // The serialized format stays "timersMs" (whole milliseconds): the
-    // 0.5ms remainder is intentionally dropped at save time (documented,
-    // bounded loss), so a restored machine needs the full remaining 20ms.
-    final m2 = StateMachine.fromJson(gun, actions: {'shoot': (c, e) {}});
-    m2.restoreSnapshot(snapshot);
-    m2.tick(const Duration(microseconds: 19500)); // 30 + 19.5 = 49.5 < 50
-    expect(m2.matches('firing'), isTrue);
-    m2.tick(const Duration(microseconds: 500)); // 50.0ms exactly
-    expect(m2.matches('wait'), isTrue);
-  });
+  test(
+    'snapshot keeps whole-ms timers; sub-ms remainder is dropped on save',
+    () {
+      final m = StateMachine.fromJson(gun, actions: {'shoot': (c, e) {}});
+      m.send('FIRE');
+      m.tick(const Duration(microseconds: 30500)); // 30.5ms accumulated
+      final snapshot = m.toSnapshotJson();
+      // The serialized format stays "timersMs" (whole milliseconds): the
+      // 0.5ms remainder is intentionally dropped at save time (documented,
+      // bounded loss), so a restored machine needs the full remaining 20ms.
+      final m2 = StateMachine.fromJson(gun, actions: {'shoot': (c, e) {}});
+      m2.restoreSnapshot(snapshot);
+      m2.tick(const Duration(microseconds: 19500)); // 30 + 19.5 = 49.5 < 50
+      expect(m2.matches('firing'), isTrue);
+      m2.tick(const Duration(microseconds: 500)); // 50.0ms exactly
+      expect(m2.matches('wait'), isTrue);
+    },
+  );
 }

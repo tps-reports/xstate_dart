@@ -26,7 +26,9 @@ void main() {
   test('StateNode.children is unmodifiable after parse', () {
     const chart = '{"id":"c","initial":"s","states":{"s":{}}}';
     final m = StateMachine.fromJson(chart);
-    expect(() => m.root.children['new'] = m.root.children['s']!,
-        throwsUnsupportedError);
+    expect(
+      () => m.root.children['new'] = m.root.children['s']!,
+      throwsUnsupportedError,
+    );
   });
 }

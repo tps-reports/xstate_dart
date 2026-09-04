@@ -1,6 +1,6 @@
 name: xstate_dart
 description: XState-JSON-compatible statechart interpreter in pure Dart. Hierarchical, parallel, timed (injected clock), eventless transitions.
-version: 0.1.2
+version: 0.1.3
 repository: https://github.com/tps-reports/xstate_dart
 topics:
   - statechart

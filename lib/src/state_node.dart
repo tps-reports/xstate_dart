@@ -24,8 +24,9 @@ class StateNode {
   /// fully parsed and attached before its own `parse` call returns), no
   /// further writes happen, and this lazily-computed view is cached forever
   /// on first read — so no caller can accidentally mutate the parsed tree.
-  late final Map<String, StateNode> children =
-      Map.unmodifiable(_childrenMutable);
+  late final Map<String, StateNode> children = Map.unmodifiable(
+    _childrenMutable,
+  );
 
   StateNode._({
     required this.key,
@@ -41,8 +42,11 @@ class StateNode {
     required this.parent,
   });
 
-  factory StateNode.parse(String key, Map<String, dynamic> cfg,
-      {StateNode? parent}) {
+  factory StateNode.parse(
+    String key,
+    Map<String, dynamic> cfg, {
+    StateNode? parent,
+  }) {
     final path = parent == null || parent.path.isEmpty
         ? key
         : '${parent.path}.$key';
@@ -58,14 +62,16 @@ class StateNode {
     }
     final on = <String, List<TransitionDef>>{};
     (cfg['on'] as Map<String, dynamic>? ?? const {}).forEach(
-        (event, raw) => on[event] = TransitionDef.parseList(raw));
+      (event, raw) => on[event] = TransitionDef.parseList(raw),
+    );
     final after = <int, List<TransitionDef>>{};
     (cfg['after'] as Map<String, dynamic>? ?? const {}).forEach((ms, raw) {
       final parsedMs = int.tryParse(ms);
       if (parsedMs == null) {
         throw FormatException(
-            'State "$path" has a non-numeric "after" key: "$ms" '
-            '(after keys must be millisecond durations, e.g. "50")');
+          'State "$path" has a non-numeric "after" key: "$ms" '
+          '(after keys must be millisecond durations, e.g. "50")',
+        );
       }
       after[parsedMs] = TransitionDef.parseList(raw);
     });
@@ -83,8 +89,11 @@ class StateNode {
       parent: parent,
     );
     (cfg['states'] as Map<String, dynamic>? ?? const {}).forEach((k, v) {
-      node._childrenMutable[k] =
-          StateNode.parse(k, v as Map<String, dynamic>, parent: node);
+      node._childrenMutable[k] = StateNode.parse(
+        k,
+        v as Map<String, dynamic>,
+        parent: node,
+      );
     });
     return node;
   }

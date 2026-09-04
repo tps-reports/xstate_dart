@@ -4,10 +4,14 @@ import 'result.dart';
 import 'state_node.dart';
 import 'transition_def.dart';
 
-typedef ActionFn = void Function(
-    Map<String, dynamic> context, Map<String, dynamic> event);
-typedef GuardFn = bool Function(Map<String, dynamic> context,
-    Map<String, dynamic> event, bool Function(String path) isActive);
+typedef ActionFn =
+    void Function(Map<String, dynamic> context, Map<String, dynamic> event);
+typedef GuardFn =
+    bool Function(
+      Map<String, dynamic> context,
+      Map<String, dynamic> event,
+      bool Function(String path) isActive,
+    );
 
 /// Hierarchical statechart interpreter.
 ///
@@ -67,7 +71,8 @@ class StateMachine {
   final Map<String, GuardFn> _guards;
   final Map<String, dynamic> _context;
   final Set<String> _configuration = {}; // active leaf paths
-  final Map<String, String> _history = {}; // parent path -> last active child key
+  final Map<String, String> _history =
+      {}; // parent path -> last active child key
   // State path -> accumulated active MICROseconds (states with `after`
   // only). Microsecond precision keeps sub-millisecond tick() durations
   // exact (Duration.inMicroseconds never truncates a real Duration);
@@ -80,16 +85,19 @@ class StateMachine {
     _settle(const {});
   }
 
-  factory StateMachine.fromJson(String json,
-      {Map<String, ActionFn> actions = const {},
-      Map<String, GuardFn> guards = const {}}) {
+  factory StateMachine.fromJson(
+    String json, {
+    Map<String, ActionFn> actions = const {},
+    Map<String, GuardFn> guards = const {},
+  }) {
     final cfg = jsonDecode(json) as Map<String, dynamic>;
     // Parse the root with an empty key so child paths have no root prefix
     // (children of "toggle" are addressed as "off", "on", not
     // "toggle.off").
     final root = StateNode.parse('', cfg);
-    final context =
-        Map<String, dynamic>.from(cfg['context'] as Map? ?? const {});
+    final context = Map<String, dynamic>.from(
+      cfg['context'] as Map? ?? const {},
+    );
     return StateMachine._(root, actions, guards, context);
   }
 
@@ -211,8 +219,9 @@ class StateMachine {
       if (found == null) break;
       if (step == _maxMicrosteps) {
         throw StateError(
-            'Eventless "always" transition loop detected in state '
-            '"${found.source.path}" (exceeded $_maxMicrosteps microsteps)');
+          'Eventless "always" transition loop detected in state '
+          '"${found.source.path}" (exceeded $_maxMicrosteps microsteps)',
+        );
       }
       _takeTransition(found.source, found.leaf, found.def, eventData);
     }
@@ -242,7 +251,7 @@ class StateMachine {
   /// matched [TransitionDef]. Skips any node whose `always` is a
   /// missing-`initial` selector (see [_isInitialSelector]).
   ({StateNode source, StateNode leaf, TransitionDef def})?
-      _findEnabledTargetedAlways(Map<String, dynamic> eventData) {
+  _findEnabledTargetedAlways(Map<String, dynamic> eventData) {
     final visited = <StateNode>{};
     for (final leafPath in List<String>.from(_configuration)) {
       final leaf = _nodeAt(leafPath);
@@ -283,8 +292,12 @@ class StateMachine {
   /// followed by normal descent through `initial`/parallel children), i.e.
   /// treated as an external self-transition on `target`, not an internal
   /// no-op.
-  void _takeTransition(StateNode source, StateNode leaf, TransitionDef def,
-      Map<String, dynamic> eventData) {
+  void _takeTransition(
+    StateNode source,
+    StateNode leaf,
+    TransitionDef def,
+    Map<String, dynamic> eventData,
+  ) {
     var target = _resolveTarget(source, def.target!);
     if (target.isHistory) {
       target = _resolveHistoryTarget(target);
@@ -381,8 +394,9 @@ class StateMachine {
       if (found == null) break;
       if (step == _maxMicrosteps) {
         throw StateError(
-            'Timed "after" transition loop detected in state '
-            '"${found.source.path}" (exceeded $_maxMicrosteps microsteps)');
+          'Timed "after" transition loop detected in state '
+          '"${found.source.path}" (exceeded $_maxMicrosteps microsteps)',
+        );
       }
       _takeTransition(found.source, found.leaf, found.def, eventData);
     }
@@ -399,7 +413,8 @@ class StateMachine {
   /// are considered — an `after` clause with no target is an unresolvable
   /// configuration, not a repeating do-activity, so it is skipped.
   ({StateNode source, StateNode leaf, TransitionDef def})? _findDueAfter(
-      Map<String, dynamic> eventData) {
+    Map<String, dynamic> eventData,
+  ) {
     final visited = <StateNode>{};
     for (final leafPath in List<String>.from(_configuration)) {
       final leaf = _nodeAt(leafPath);
@@ -447,8 +462,7 @@ class StateMachine {
       'configuration': _configuration.toList(),
       'context': _context,
       'history': _history,
-      'timersMs':
-          _timersUs.map((path, us) => MapEntry(path, us ~/ 1000)),
+      'timersMs': _timersUs.map((path, us) => MapEntry(path, us ~/ 1000)),
     });
   }
 
@@ -500,12 +514,12 @@ class StateMachine {
     final rawConfiguration = decoded['configuration'];
     if (rawConfiguration is! List) {
       throw FormatException(
-          'restoreSnapshot: snapshot is missing a "configuration" list');
+        'restoreSnapshot: snapshot is missing a "configuration" list',
+      );
     }
     final configuration = rawConfiguration.map((e) => e as String).toList();
     if (configuration.isEmpty) {
-      throw StateError(
-          'restoreSnapshot: "configuration" must not be empty');
+      throw StateError('restoreSnapshot: "configuration" must not be empty');
     }
     for (final path in configuration) {
       if (path.isEmpty || !_pathExists(path)) {
@@ -513,12 +527,16 @@ class StateMachine {
       }
       final node = _nodeAt(path);
       if (node.isHistory) {
-        throw StateError('restoreSnapshot: configuration path "$path" is a '
-            'history pseudo-state, not a real active state');
+        throw StateError(
+          'restoreSnapshot: configuration path "$path" is a '
+          'history pseudo-state, not a real active state',
+        );
       }
       if (!node.isLeaf) {
-        throw StateError('restoreSnapshot: configuration path "$path" is '
-            'not an atomic (leaf) state');
+        throw StateError(
+          'restoreSnapshot: configuration path "$path" is '
+          'not an atomic (leaf) state',
+        );
       }
     }
     for (var i = 0; i < configuration.length; i++) {
@@ -527,35 +545,43 @@ class StateMachine {
         final b = _nodeAt(configuration[j]);
         if (identical(a, b)) continue; // duplicate path, not a violation
         if (!_lca(a, b).isParallel) {
-          throw StateError('restoreSnapshot: configuration paths '
-              '"${configuration[i]}" and "${configuration[j]}" are not '
-              'orthogonal (only leaves in different parallel regions may '
-              'both be active)');
+          throw StateError(
+            'restoreSnapshot: configuration paths '
+            '"${configuration[i]}" and "${configuration[j]}" are not '
+            'orthogonal (only leaves in different parallel regions may '
+            'both be active)',
+          );
         }
       }
     }
 
     final context = Map<String, dynamic>.from(
-        decoded['context'] as Map? ?? const {});
+      decoded['context'] as Map? ?? const {},
+    );
     final history = Map<String, String>.from(
-        (decoded['history'] as Map? ?? const {})
-            .map((k, v) => MapEntry(k as String, v as String)));
+      (decoded['history'] as Map? ?? const {}).map(
+        (k, v) => MapEntry(k as String, v as String),
+      ),
+    );
     for (final entry in history.entries) {
       final parentPath = entry.key;
       if (!_pathExists(parentPath)) {
-        throw StateError(
-            'restoreSnapshot: unknown state path "$parentPath"');
+        throw StateError('restoreSnapshot: unknown state path "$parentPath"');
       }
       final childKey = entry.value;
       final child = _nodeAt(parentPath).children[childKey];
       if (child == null || child.isHistory) {
-        throw StateError('restoreSnapshot: history entry for '
-            '"$parentPath" names unknown or invalid child "$childKey"');
+        throw StateError(
+          'restoreSnapshot: history entry for '
+          '"$parentPath" names unknown or invalid child "$childKey"',
+        );
       }
     }
     final timersMs = Map<String, int>.from(
-        (decoded['timersMs'] as Map? ?? const {})
-            .map((k, v) => MapEntry(k as String, v as int)));
+      (decoded['timersMs'] as Map? ?? const {}).map(
+        (k, v) => MapEntry(k as String, v as int),
+      ),
+    );
     for (final path in timersMs.keys) {
       if (!_pathExists(path)) {
         throw StateError('restoreSnapshot: unknown state path "$path"');
@@ -590,7 +616,9 @@ class StateMachine {
   }
 
   TransitionDef? _firstEnabled(
-      List<TransitionDef> defs, Map<String, dynamic> eventData) {
+    List<TransitionDef> defs,
+    Map<String, dynamic> eventData,
+  ) {
     for (final def in defs) {
       if (_guardPasses(def, eventData)) return def;
     }
@@ -693,9 +721,11 @@ class StateMachine {
       target = _resolveHistoryTarget(target);
     }
     if (!identical(_lca(node, target), node)) {
-      throw StateError('Compound state ${node.path} has no initial, and its '
-          'resolving always target "${chosen.target}" escapes its own '
-          'subtree (resolved to "${target.path}")');
+      throw StateError(
+        'Compound state ${node.path} has no initial, and its '
+        'resolving always target "${chosen.target}" escapes its own '
+        'subtree (resolved to "${target.path}")',
+      );
     }
     _runActions(chosen.actions, eventData);
     _enterChain(_chainDownTo(target, node), eventData);
@@ -788,7 +818,10 @@ class StateMachine {
   /// region root): only that region's currently-active subtree is exited,
   /// and entry descends from that same region root down to `target`.
   ({StateNode domain, StateNode exitDomain}) _transitionDomains(
-      StateNode leaf, StateNode target, StateNode lca) {
+    StateNode leaf,
+    StateNode target,
+    StateNode lca,
+  ) {
     if (lca.isParallel) {
       final targetRegion = _childTowards(target, lca);
       return (domain: targetRegion, exitDomain: targetRegion);
@@ -852,10 +885,10 @@ class StateMachine {
   /// Resolve a transition target string against `source` per the 4-step
   /// rule documented on this class.
   StateNode _resolveTarget(StateNode source, String targetStr) {
-    final strippedSegments = (targetStr.startsWith('.')
-            ? targetStr.substring(1)
-            : targetStr)
-        .split('.');
+    final strippedSegments =
+        (targetStr.startsWith('.') ? targetStr.substring(1) : targetStr).split(
+          '.',
+        );
 
     // Step 1: leading dot -> child path of the source node itself.
     if (targetStr.startsWith('.')) {
@@ -884,6 +917,7 @@ class StateMachine {
     }
 
     throw StateError(
-        'Unresolvable target "$targetStr" from source "${source.path}"');
+      'Unresolvable target "$targetStr" from source "${source.path}"',
+    );
   }
 }

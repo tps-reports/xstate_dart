@@ -21,12 +21,14 @@ const chooser = '''
 ''';
 
 void main() {
-  StateMachine build(int n) => StateMachine.fromJson(chooser,
-      actions: {
-        'bump': (c, e) => c['n'] = 5,
-        'detect': (c, e) => c['detections'] = (c['detections'] as int) + 1,
-      },
-      guards: {'isLow': (c, e, a) => (c['n'] as int) < 3});
+  StateMachine build(int n) => StateMachine.fromJson(
+    chooser,
+    actions: {
+      'bump': (c, e) => c['n'] = 5,
+      'detect': (c, e) => c['detections'] = (c['detections'] as int) + 1,
+    },
+    guards: {'isLow': (c, e, a) => (c['n'] as int) < 3},
+  );
 
   test('choice resolves immediately on initial entry', () {
     expect(build(0).matches('low'), isTrue);
@@ -76,12 +78,13 @@ void main() {
     ''';
 
     StateMachine buildWatcher({required bool armed}) => StateMachine.fromJson(
-        watcher,
-        actions: {
-          'tick': (c, e) => c['count'] = (c['count'] as int) + 1,
-          'noop': (c, e) {},
-        },
-        guards: {'armed': (c, e, a) => armed});
+      watcher,
+      actions: {
+        'tick': (c, e) => c['count'] = (c['count'] as int) + 1,
+        'noop': (c, e) {},
+      },
+      guards: {'armed': (c, e, a) => armed},
+    );
 
     test('fires once on initial-entry settle', () {
       final m = buildWatcher(armed: true);

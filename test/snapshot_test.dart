@@ -47,8 +47,7 @@ void main() {
     expect(m2.activeStates, equals(m1.activeStates));
   });
 
-  test('restoreSnapshot rejects a compound (non-leaf) configuration path',
-      () {
+  test('restoreSnapshot rejects a compound (non-leaf) configuration path', () {
     final m1 = StateMachine.fromJson(_chart);
     final decoded = jsonDecode(m1.toSnapshotJson()) as Map<String, dynamic>;
     decoded['configuration'] = ['m']; // "m" is compound; "m.a" is the leaf
@@ -57,13 +56,17 @@ void main() {
     final m2 = StateMachine.fromJson(_chart);
     expect(
       () => m2.restoreSnapshot(badSnap),
-      throwsA(isA<StateError>().having((e) => e.message, 'message',
-          contains('not an atomic (leaf) state'))),
+      throwsA(
+        isA<StateError>().having(
+          (e) => e.message,
+          'message',
+          contains('not an atomic (leaf) state'),
+        ),
+      ),
     );
   });
 
-  test('restoreSnapshot rejects a history entry naming an unknown child',
-      () {
+  test('restoreSnapshot rejects a history entry naming an unknown child', () {
     final m1 = StateMachine.fromJson(_chart);
     final decoded = jsonDecode(m1.toSnapshotJson()) as Map<String, dynamic>;
     decoded['history'] = {'m': 'bogus'};
@@ -72,8 +75,13 @@ void main() {
     final m2 = StateMachine.fromJson(_chart);
     expect(
       () => m2.restoreSnapshot(badSnap),
-      throwsA(isA<StateError>().having((e) => e.message, 'message',
-          contains('unknown or invalid child "bogus"'))),
+      throwsA(
+        isA<StateError>().having(
+          (e) => e.message,
+          'message',
+          contains('unknown or invalid child "bogus"'),
+        ),
+      ),
     );
   });
 
@@ -86,8 +94,13 @@ void main() {
     final m2 = StateMachine.fromJson(_chart);
     expect(
       () => m2.restoreSnapshot(badSnap),
-      throwsA(isA<StateError>().having((e) => e.message, 'message',
-          contains('unknown or invalid child "hist"'))),
+      throwsA(
+        isA<StateError>().having(
+          (e) => e.message,
+          'message',
+          contains('unknown or invalid child "hist"'),
+        ),
+      ),
     );
   });
 
@@ -95,14 +108,10 @@ void main() {
     final badSnap = jsonEncode({'context': {}, 'history': {}, 'timersMs': {}});
 
     final m2 = StateMachine.fromJson(_chart);
-    expect(
-      () => m2.restoreSnapshot(badSnap),
-      throwsA(isA<FormatException>()),
-    );
+    expect(() => m2.restoreSnapshot(badSnap), throwsA(isA<FormatException>()));
   });
 
-  test('restoreSnapshot rejects a history pseudo-state as an active leaf',
-      () {
+  test('restoreSnapshot rejects a history pseudo-state as an active leaf', () {
     final m1 = StateMachine.fromJson(_chart);
     final decoded = jsonDecode(m1.toSnapshotJson()) as Map<String, dynamic>;
     decoded['configuration'] = ['m.hist']; // "hist" is history:true, not real
@@ -111,13 +120,17 @@ void main() {
     final m2 = StateMachine.fromJson(_chart);
     expect(
       () => m2.restoreSnapshot(badSnap),
-      throwsA(isA<StateError>().having((e) => e.message, 'message',
-          contains('history pseudo-state'))),
+      throwsA(
+        isA<StateError>().having(
+          (e) => e.message,
+          'message',
+          contains('history pseudo-state'),
+        ),
+      ),
     );
   });
 
-  test(
-      'restoreSnapshot rejects two children of a non-parallel compound both '
+  test('restoreSnapshot rejects two children of a non-parallel compound both '
       'active (non-orthogonal configuration)', () {
     final m1 = StateMachine.fromJson(_chart);
     final decoded = jsonDecode(m1.toSnapshotJson()) as Map<String, dynamic>;
@@ -127,20 +140,34 @@ void main() {
     final m2 = StateMachine.fromJson(_chart);
     expect(
       () => m2.restoreSnapshot(badSnap),
-      throwsA(isA<StateError>().having(
-          (e) => e.message, 'message', contains('not orthogonal'))),
+      throwsA(
+        isA<StateError>().having(
+          (e) => e.message,
+          'message',
+          contains('not orthogonal'),
+        ),
+      ),
     );
   });
 
   test('restoreSnapshot rejects an empty "configuration"', () {
-    final badSnap = jsonEncode(
-        {'configuration': [], 'context': {}, 'history': {}, 'timersMs': {}});
+    final badSnap = jsonEncode({
+      'configuration': [],
+      'context': {},
+      'history': {},
+      'timersMs': {},
+    });
 
     final m2 = StateMachine.fromJson(_chart);
     expect(
       () => m2.restoreSnapshot(badSnap),
-      throwsA(isA<StateError>().having(
-          (e) => e.message, 'message', contains('must not be empty'))),
+      throwsA(
+        isA<StateError>().having(
+          (e) => e.message,
+          'message',
+          contains('must not be empty'),
+        ),
+      ),
     );
   });
 
@@ -149,13 +176,10 @@ void main() {
       'configuration': 'm.a',
       'context': {},
       'history': {},
-      'timersMs': {}
+      'timersMs': {},
     });
 
     final m2 = StateMachine.fromJson(_chart);
-    expect(
-      () => m2.restoreSnapshot(badSnap),
-      throwsA(isA<FormatException>()),
-    );
+    expect(() => m2.restoreSnapshot(badSnap), throwsA(isA<FormatException>()));
   });
 }

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.3
+
+- Add a CD-player example (`example/main.dart`) — the classic Harel
+  statechart — exercising hierarchy, guarded alternative transitions,
+  deterministic `after` timers via `tick`, history resume after eject,
+  and snapshot save/restore, backed by an acceptance test suite.
+- Apply `dart format` across the package.
+
 ## 0.1.2
 
 Initial public release.

@@ -12,31 +12,37 @@ void main() {
     fireCount = 0;
     moves = [];
     final json = File('test/fixtures/agent_one.json').readAsStringSync();
-    return StateMachine.fromJson(json, actions: {
-      'updateColliding': (c, e) =>
-          (c['CD'] as Map)['colliding'] = env['present'],
-      'moveLeft': (c, e) => moves.add('L'),
-      'moveRight': (c, e) => moves.add('R'),
-      'stopShip': (c, e) => moves.add('STOP'),
-      'setLastDirLeft': (c, e) => c['lastDir'] = 'LEFT',
-      'setLastDirRight': (c, e) => c['lastDir'] = 'RIGHT',
-      'fireWeapon': (c, e) => fireCount++,
-    }, guards: {
-      'isEnvNotNull': (c, e, a) => true,
-      'isCollidingPresent': (c, e, a) => (c['CD'] as Map)['colliding'] == true,
-      'isCollidingNotPresent': (c, e, a) => (c['CD'] as Map)['colliding'] != true,
-      'shouldMoveLeft': (c, e, a) =>
-          c['lastDir'] == 'RIGHT' && env['canLeft'] == true,
-      'isRightCollisionOrBlocked': (c, e, a) =>
-          a('BorderDetection.RightCollision') || env['canRight'] != true,
-      'isLeftCollisionOrBlocked': (c, e, a) =>
-          a('BorderDetection.LeftCollision') || env['canLeft'] != true,
-      'canFire': (c, e, a) => (c['CD'] as Map)['colliding'] == true,
-      'hasHitLeftBorder': (c, e, a) => (env['x'] as double) < 0.01,
-      'hasHitRightBorder': (c, e, a) => (env['x'] as double) > 0.9,
-      'hasLeftBorderCleared': (c, e, a) => (env['x'] as double) >= 0.01,
-      'hasRightBorderCleared': (c, e, a) => (env['x'] as double) <= 0.9,
-    });
+    return StateMachine.fromJson(
+      json,
+      actions: {
+        'updateColliding': (c, e) =>
+            (c['CD'] as Map)['colliding'] = env['present'],
+        'moveLeft': (c, e) => moves.add('L'),
+        'moveRight': (c, e) => moves.add('R'),
+        'stopShip': (c, e) => moves.add('STOP'),
+        'setLastDirLeft': (c, e) => c['lastDir'] = 'LEFT',
+        'setLastDirRight': (c, e) => c['lastDir'] = 'RIGHT',
+        'fireWeapon': (c, e) => fireCount++,
+      },
+      guards: {
+        'isEnvNotNull': (c, e, a) => true,
+        'isCollidingPresent': (c, e, a) =>
+            (c['CD'] as Map)['colliding'] == true,
+        'isCollidingNotPresent': (c, e, a) =>
+            (c['CD'] as Map)['colliding'] != true,
+        'shouldMoveLeft': (c, e, a) =>
+            c['lastDir'] == 'RIGHT' && env['canLeft'] == true,
+        'isRightCollisionOrBlocked': (c, e, a) =>
+            a('BorderDetection.RightCollision') || env['canRight'] != true,
+        'isLeftCollisionOrBlocked': (c, e, a) =>
+            a('BorderDetection.LeftCollision') || env['canLeft'] != true,
+        'canFire': (c, e, a) => (c['CD'] as Map)['colliding'] == true,
+        'hasHitLeftBorder': (c, e, a) => (env['x'] as double) < 0.01,
+        'hasHitRightBorder': (c, e, a) => (env['x'] as double) > 0.9,
+        'hasLeftBorderCleared': (c, e, a) => (env['x'] as double) >= 0.01,
+        'hasRightBorderCleared': (c, e, a) => (env['x'] as double) <= 0.9,
+      },
+    );
   }
 
   void step(StateMachine m, {int ms = 16}) {
@@ -57,7 +63,9 @@ void main() {
     final m = build();
     step(m); // regions leave Idle
     env['present'] = true;
-    step(m); // Detection records colliding; Steering -> Move -> Left; Gun -> Fire
+    step(
+      m,
+    ); // Detection records colliding; Steering -> Move -> Left; Gun -> Fire
     step(m);
     expect(m.matches('Steering.Active.Move.Left'), isTrue);
     expect(moves, contains('L'));
@@ -69,7 +77,9 @@ void main() {
     step(m);
     env['present'] = true;
     step(m);
-    step(m); // context written by do-activity actions is visible to guards from the next TICK
+    step(
+      m,
+    ); // context written by do-activity actions is visible to guards from the next TICK
     final before = fireCount;
     step(m, ms: 10); // 10ms: still in Fire
     expect(fireCount, before);
@@ -89,7 +99,9 @@ void main() {
     expect(m.matches('Steering.Active.Move.Left'), isTrue);
     env['present'] = false; // target gone -> Move exits -> stopShip
     step(m);
-    step(m); // context written by do-activity actions is visible to guards from the next TICK
+    step(
+      m,
+    ); // context written by do-activity actions is visible to guards from the next TICK
     expect(m.matches('Steering.Active.HoldPosition'), isTrue);
     expect(moves.last, 'STOP');
   });

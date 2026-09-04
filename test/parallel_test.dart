@@ -62,30 +62,41 @@ const crossRegion = '''
 
 void main() {
   test('entering parallel root activates every region', () {
-    final m = StateMachine.fromJson(par,
-        guards: {'engineRunning': (c, e, isActive) => isActive('engine.running')});
+    final m = StateMachine.fromJson(
+      par,
+      guards: {'engineRunning': (c, e, isActive) => isActive('engine.running')},
+    );
     expect(m.matches('lights.off'), isTrue);
     expect(m.matches('engine.stopped'), isTrue);
   });
 
-  test('regions receive events independently; cross-region guard sees live state', () {
-    final m = StateMachine.fromJson(par,
-        guards: {'engineRunning': (c, e, isActive) => isActive('engine.running')});
-    m.send('TICK');
-    expect(m.matches('lights.off'), isTrue); // engine not running yet
-    m.send('START');
-    m.send('TICK');
-    expect(m.matches('lights.on'), isTrue); // guard saw engine.running
-  });
-
   test(
-      'a transition whose target lies in another region only exits/enters '
+    'regions receive events independently; cross-region guard sees live state',
+    () {
+      final m = StateMachine.fromJson(
+        par,
+        guards: {
+          'engineRunning': (c, e, isActive) => isActive('engine.running'),
+        },
+      );
+      m.send('TICK');
+      expect(m.matches('lights.off'), isTrue); // engine not running yet
+      m.send('START');
+      m.send('TICK');
+      expect(m.matches('lights.on'), isTrue); // guard saw engine.running
+    },
+  );
+
+  test('a transition whose target lies in another region only exits/enters '
       'within the target region; the source region is untouched', () {
     final exited = <String>[];
-    final m = StateMachine.fromJson(crossRegion, actions: {
-      'exitLightsOff': (c, e) => exited.add('lights.off'),
-      'exitEngineStopped': (c, e) => exited.add('engine.stopped'),
-    });
+    final m = StateMachine.fromJson(
+      crossRegion,
+      actions: {
+        'exitLightsOff': (c, e) => exited.add('lights.off'),
+        'exitEngineStopped': (c, e) => exited.add('engine.stopped'),
+      },
+    );
 
     m.send('JUMP'); // handled by lights.off, targets engine.running
 
@@ -102,13 +113,13 @@ void main() {
     expect(exited, ['engine.stopped']);
   });
 
-  test(
-      'a handler declared on the parallel state itself fires once per '
+  test('a handler declared on the parallel state itself fires once per '
       'send(), not once per active region leaf', () {
     var count = 0;
-    final m = StateMachine.fromJson(triRegion, actions: {
-      'bump': (c, e) => count++,
-    });
+    final m = StateMachine.fromJson(
+      triRegion,
+      actions: {'bump': (c, e) => count++},
+    );
     expect(m.matches('r1.a'), isTrue);
     expect(m.matches('r2.a'), isTrue);
     expect(m.matches('r3.a'), isTrue);

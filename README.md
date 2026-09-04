@@ -15,7 +15,7 @@ JSON-defined workflow and UI state.
 
 ```yaml
 dependencies:
-  xstate_dart: ^0.1.2
+  xstate_dart: ^0.1.3
 ```
 
 ## Quickstart

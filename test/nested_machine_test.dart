@@ -34,13 +34,17 @@ void main() {
   List<String> log = [];
   StateMachine build() {
     log = [];
-    ActionFn logAs(String tag) => (ctx, e) => log.add(tag);
-    return StateMachine.fromJson(nestedChart, actions: {
-      'enterA': logAs('enterA'),
-      'enterA1': logAs('enterA1'),
-      'exitA1': logAs('exitA1'),
-      'exitB': logAs('exitB'),
-    });
+    ActionFn logAs(String tag) =>
+        (ctx, e) => log.add(tag);
+    return StateMachine.fromJson(
+      nestedChart,
+      actions: {
+        'enterA': logAs('enterA'),
+        'enterA1': logAs('enterA1'),
+        'exitA1': logAs('exitA1'),
+        'exitB': logAs('exitB'),
+      },
+    );
   }
 
   test('initial entry descends to leaf, entry actions top-down', () {
@@ -52,7 +56,9 @@ void main() {
 
   test('relative .child target', () {
     final m = build();
-    m.send('IN'); // a.a1 -> a.a2 via ".a2" (child of source's PARENT a — see note)
+    m.send(
+      'IN',
+    ); // a.a1 -> a.a2 via ".a2" (child of source's PARENT a — see note)
     expect(m.matches('a.a2'), isTrue);
   });
 
@@ -77,15 +83,18 @@ void main() {
     expect(m.matches('b.b1.b1x'), isTrue);
   });
 
-  test('previousStates is the ancestor closure, same shape as activeStates', () {
-    final m = build();
-    final r = m.send('OUT'); // a.a1 -> a.a2
-    // Before the transition the active leaf was "a.a1" — previousStates
-    // must include its ancestor "a" too, exactly like activeStates does for
-    // the current configuration, not just the raw leaf path.
-    expect(r.previousStates, {'a', 'a.a1'});
-    expect(r.activeStates, {'a', 'a.a2'});
-  });
+  test(
+    'previousStates is the ancestor closure, same shape as activeStates',
+    () {
+      final m = build();
+      final r = m.send('OUT'); // a.a1 -> a.a2
+      // Before the transition the active leaf was "a.a1" — previousStates
+      // must include its ancestor "a" too, exactly like activeStates does for
+      // the current configuration, not just the raw leaf path.
+      expect(r.previousStates, {'a', 'a.a1'});
+      expect(r.activeStates, {'a', 'a.a2'});
+    },
+  );
 
   test('exit actions run bottom-up on leaving a compound state', () {
     final m = build();
